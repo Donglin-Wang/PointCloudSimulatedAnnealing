@@ -1,4 +1,5 @@
-/data/*
+/data/point_labels_by_cat.pkl
+/data/points_by_cat.pkl
 **/.DS_Store
 
 # Byte-compiled / optimized / DLL files
