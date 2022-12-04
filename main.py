@@ -102,10 +102,11 @@ def main():
     pcd_labs = read_pkl(os.path.join(DATA_ROOT, 'point_labels_by_cat.pkl'))
     support_pcds, support_labs, query_pcds, query_labs = get_support_query(
         pcds_dict[category], pcd_labs[category], 5)
+    query_pcds = torch.tensor(query_pcds).float()
+    query_labs = torch.tensor(query_labs).long()
     pred = get_knn(support_pcds, support_labs, query_pcds, K=3)
-    # Get initial pred accurancy
     new_pred = pred.clone()
-
+    # Get initial pred accurancy
     support_closest_idx, support_roi_idxs, support_roi_pcds, support_roi_labs = get_roi_knn(support_pcds, support_labs, 4)
     query_closest_idx, query_roi_idxs, query_roi_pcds, query_roi_labs = get_roi_knn(query_pcds, pred, 4)
 
@@ -114,10 +115,13 @@ def main():
         roi_pcd = roi_pcd.points_list()[0]
         roi_labs = support_roi_labs[combo][0]
         for i in tqdm(range(len(query_pcds)), leave=False):
-            anneal = Anneal(roi_pcd, roi_labs, torch.tensor(query_pcds[i]).float(), query_closest_idx[i])
-            anneal.anneal()
-
-
+            # visualize(query_pcds[i], pred[i])
+            anneal = Anneal(roi_pcd, roi_labs, query_pcds[i], pred[i], query_closest_idx[i])
+            new_pred[i] = anneal.anneal()
+            # visualize(query_pcds[i], new_query_lab)
+    for i in range(len(new_pred)):
+        visualize(query_pcds[i], pred[i])
+        visualize(query_pcds[i], new_pred[i])
 
 if __name__ == '__main__':
     # data_root = './data/'

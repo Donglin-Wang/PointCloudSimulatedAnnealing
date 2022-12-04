@@ -3,13 +3,15 @@ import random
 
 import torch
 from tqdm import tqdm
+from pytorch3d.ops import knn_points, knn_gather
 from pytorch3d.loss import chamfer_distance
 
 
 class Anneal:
-    def __init__(self, support_roi, support_roi_labs, query_pcd, query_neigh_idx, start_pnt_idx=None):
+    def __init__(self, support_roi, support_roi_labs, query_pcd, query_lab, query_neigh_idx, start_pnt_idx=None):
         # Get the coordinate from file
         self.query_pcd = query_pcd
+        self.query_lab = query_lab
         self.query_neigh_idx = query_neigh_idx
         self.support_roi = support_roi
         self.support_roi_labs = support_roi_labs
@@ -75,9 +77,16 @@ class Anneal:
             self.cur_temp = self.init_temp
             self.cur = self.init_solu()
         self.write_labs()
+        return self.query_lab
     
-    def write_labs():
-        pass
+    def write_labs(self):
+        cur_query_pnt = self.query_pcd[self.best]
+        best_roi = self.support_roi + (self.anchor - cur_query_pnt)
+        _, idx, _ = knn_points(best_roi.unsqueeze(0), self.query_pcd.unsqueeze(0), K=1)
+        idx = idx[0,:,0]
+        for i, j in enumerate(idx):
+            self.query_lab[j] = self.support_roi_labs[i]
+        
 
 
 if __name__ == '__main__':
