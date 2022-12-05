@@ -96,6 +96,26 @@ def get_roi_knn(pcds, pcd_labs, n_parts, K=32):
     return idx, combo_to_roi_idxs, combo_to_roi_pcds, combo_to_roi_labs
 
 
+def calc_accuracy():
+    pass
+
+def calc_iou(pred, target):
+    mask = pred == target
+    unique_labs = torch.unique(target)
+    total_iou = 0.0
+    for lab in unique_labs:
+        n_pred = torch.sum(pred == lab)
+        n_gt = torch.sum(target == lab)
+        n_intersect = torch.sum((target == lab) * mask)
+        n_union = n_pred + n_gt - n_intersect
+        if n_union == 0:
+            total_iou += 1
+        else:
+            total_iou += n_intersect * 1.0 / n_union
+    
+    return total_iou / len(unique_labs)
+
+
 def main():
     category = "Car"
     pcds_dict = read_pkl(os.path.join(DATA_ROOT, 'points_by_cat.pkl'))
@@ -116,17 +136,28 @@ def main():
         roi_labs = support_roi_labs[combo][0]
         for i in tqdm(range(len(query_pcds)), leave=False):
             # visualize(query_pcds[i], pred[i])
-            anneal = Anneal(roi_pcd, roi_labs, query_pcds[i], pred[i], query_closest_idx[i])
-            new_pred[i] = anneal.anneal()
+            anneal = Anneal(roi_pcd, roi_labs, query_pcds[i], new_pred[i], query_closest_idx[i])
+            anneal.anneal()
+    # print(torch.equal(pred, new_pred))
             # visualize(query_pcds[i], new_query_lab)
     for i in range(len(new_pred)):
         visualize(query_pcds[i], pred[i])
         visualize(query_pcds[i], new_pred[i])
+    
+    avg_iou, new_avg_iou = 0, 0
+    for p, gt in zip(pred, query_labs):
+        avg_iou += calc_iou(p, gt)
+    avg_iou /= len(pred)
+    print(avg_iou)
+    for p, gt in zip(new_pred, query_labs):
+        new_avg_iou += calc_iou(p, gt)
+    new_avg_iou /= len(new_pred)
+    print(new_avg_iou)
 
 if __name__ == '__main__':
-    # data_root = './data/'
-    # pcds_dict = read_pkl(os.path.join(data_root, 'points_by_cat.pkl'))
-    # pcd_labs = read_pkl(os.path.join(data_root, 'point_labels_by_cat.pkl'))
+    data_root = './data/'
+    pcds_dict = read_pkl(os.path.join(data_root, 'points_by_cat.pkl'))
+    pcd_labs = read_pkl(os.path.join(data_root, 'point_labels_by_cat.pkl'))
 
     # new_labs, combo_to_roi_idxs, combo_to_roi_pcds = get_roi_knn(
     #     pcds_dict['Guitar'], pcd_labs['Guitar'], 4)
@@ -136,4 +167,10 @@ if __name__ == '__main__':
     #         if not roi_pcd.isempty():
     #             for pcd in roi_pcd.points_list():
     #                 print(pcd.shape)
-    main()
+    # main()
+    cnt = 0
+    num = 0
+    for k, v in pcds_dict.items():
+        cnt += len(v)
+        num += 1
+    print(cnt / num)

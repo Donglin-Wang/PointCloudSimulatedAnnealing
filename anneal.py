@@ -15,7 +15,7 @@ class Anneal:
         self.query_neigh_idx = query_neigh_idx
         self.support_roi = support_roi
         self.support_roi_labs = support_roi_labs
-        self.anchor_idx = random.randint(0, len(support_roi))
+        self.anchor_idx = random.randint(0, len(support_roi) - 1)
         self.anchor = support_roi[self.anchor_idx]
         self.support_roi = support_roi
 
@@ -29,8 +29,8 @@ class Anneal:
         self.init_temp = torch.tensor(math.sqrt(2048))
         self.cur_temp = torch.tensor(math.sqrt(2048))
         self.alpha = 0.9995
-        self.max_iter = 200  # number of inner loop n_{in}
-        self.num_exp = 10  # number of outer loop n_{out} / random restarts
+        self.max_iter = 1000  # number of inner loop n_{in}
+        self.num_exp = 3  # number of outer loop n_{out} / random restarts
         self.log = []
 
     def init_solu(self):
@@ -85,6 +85,7 @@ class Anneal:
         _, idx, _ = knn_points(best_roi.unsqueeze(0), self.query_pcd.unsqueeze(0), K=1)
         idx = idx[0,:,0]
         for i, j in enumerate(idx):
+            # print(self.query_lab[j] == self.support_roi_labs[i])
             self.query_lab[j] = self.support_roi_labs[i]
         
 
