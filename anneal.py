@@ -30,11 +30,11 @@ class Anneal:
         self.cur_temp = torch.tensor(math.sqrt(2048))
         self.alpha = 0.9995
         self.max_iter = 1000  # number of inner loop n_{in}
-        self.num_exp = 3  # number of outer loop n_{out} / random restarts
+        self.num_exp = 2  # number of outer loop n_{out} / random restarts
         self.log = []
 
     def init_solu(self):
-        return random.randint(0, len(self.query_pcd))
+        return random.randint(0, len(self.query_pcd) - 1)
 
     # Change the path randomly each time
     def tweak(self, solu):
@@ -51,9 +51,9 @@ class Anneal:
     # Start annealing
     def anneal(self):
         # Outer loop that executes random restarts
-        for _ in tqdm(range(self.num_exp), leave=False):
+        for _ in range(self.num_exp):
             # Inner loop for the Simulated Annealing iterations
-            for _ in tqdm(range(self.max_iter), leave=False):
+            for _ in range(self.max_iter):
                 new_solu = self.tweak(self.best)
                 new_fit = self.calc_fitness(new_solu)
                 # If a neighboring solution is better, the new solution is accepted
@@ -85,7 +85,6 @@ class Anneal:
         _, idx, _ = knn_points(best_roi.unsqueeze(0), self.query_pcd.unsqueeze(0), K=1)
         idx = idx[0,:,0]
         for i, j in enumerate(idx):
-            # print(self.query_lab[j] == self.support_roi_labs[i])
             self.query_lab[j] = self.support_roi_labs[i]
         
 

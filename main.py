@@ -9,8 +9,10 @@ from pytorch3d.ops import knn_points, knn_gather
 from pytorch3d.structures import Pointclouds
 import trimesh
 from tqdm import tqdm
+from datetime import datetime
 
 DATA_ROOT = './data/'
+LOG_ROOT = './logs/'
 CATEGORIES = []
 COLORS = np.array([[235, 87, 87], [242, 153, 74], [242, 201, 76],
                    [33, 150, 83], [47, 128, 237], [155, 81, 224], [0, 0, 0]])
@@ -49,6 +51,8 @@ def get_knn(labeled_pcds, labels, unlabeled_pcds, K=1):
 def visualize(pcd, labels):
     if isinstance(pcd, torch.Tensor):
         pcd = pcd.detach().cpu().numpy()
+    if isinstance(labels, torch.Tensor):
+        labels = labels.detach().cpu().numpy()
     pcd = trimesh.points.PointCloud(pcd, colors=COLORS[labels])
     pcd.scene().show()
 
@@ -78,7 +82,7 @@ def get_roi_knn(pcds, pcd_labs, n_parts, K=32):
 
     for i, pcd_lab in enumerate(new_labs):
         for j, pnt_lab in enumerate(pcd_lab):
-            unique_labs = tuple(pnt_lab.unique().numpy())
+            unique_labs = tuple(pnt_lab.unique().cpu().numpy())
             if (len(unique_labs)) == 2:
                 combo_to_roi_pcds[unique_labs][i].append(pcds[i][j])
                 combo_to_roi_labs[unique_labs][i].append(pcd_labs[i][j][0])
@@ -87,8 +91,8 @@ def get_roi_knn(pcds, pcd_labs, n_parts, K=32):
     for k, roi_pcds in combo_to_roi_pcds.items():
         for i, roi_pcd in enumerate(roi_pcds):
             combo_to_roi_pcds[k][i] = torch.stack(
-                    roi_pcd) if roi_pcd else torch.tensor([])
-            combo_to_roi_labs[k][i] = torch.tensor(combo_to_roi_labs[k][i])
+                    roi_pcd).cuda() if roi_pcd else torch.tensor([]).cuda()
+            combo_to_roi_labs[k][i] = torch.tensor(combo_to_roi_labs[k][i]).cuda()
 
     combo_to_roi_pcds = {k: Pointclouds(v)
                          for k, v in combo_to_roi_pcds.items()}
@@ -96,81 +100,95 @@ def get_roi_knn(pcds, pcd_labs, n_parts, K=32):
     return idx, combo_to_roi_idxs, combo_to_roi_pcds, combo_to_roi_labs
 
 
-def calc_accuracy():
-    pass
+def calc_accuracy(pred, target):
+    correct = torch.sum(pred == target)
+    accu = correct / len(pred)
+    return accu.item()
+
 
 def calc_iou(pred, target):
     mask = pred == target
     unique_labs = torch.unique(target)
-    total_iou = 0.0
+    iou_by_cat = 0.0
     for lab in unique_labs:
         n_pred = torch.sum(pred == lab)
         n_gt = torch.sum(target == lab)
         n_intersect = torch.sum((target == lab) * mask)
         n_union = n_pred + n_gt - n_intersect
         if n_union == 0:
-            total_iou += 1
+            iou_by_cat += 1
         else:
-            total_iou += n_intersect * 1.0 / n_union
-    
-    return total_iou / len(unique_labs)
+            iou_by_cat += n_intersect * 1.0 / n_union
+    iou = iou_by_cat / len(unique_labs)
+    return iou.item()
 
 
 def main():
-    category = "Car"
+    n_rounds = 2
+    n_sample = 2
+    exp_file_name = 'r2s2k32o2i1000'
     pcds_dict = read_pkl(os.path.join(DATA_ROOT, 'points_by_cat.pkl'))
     pcd_labs = read_pkl(os.path.join(DATA_ROOT, 'point_labels_by_cat.pkl'))
-    support_pcds, support_labs, query_pcds, query_labs = get_support_query(
-        pcds_dict[category], pcd_labs[category], 5)
-    query_pcds = torch.tensor(query_pcds).float()
-    query_labs = torch.tensor(query_labs).long()
-    pred = get_knn(support_pcds, support_labs, query_pcds, K=3)
-    new_pred = pred.clone()
-    # Get initial pred accurancy
-    support_closest_idx, support_roi_idxs, support_roi_pcds, support_roi_labs = get_roi_knn(support_pcds, support_labs, 4)
-    query_closest_idx, query_roi_idxs, query_roi_pcds, query_roi_labs = get_roi_knn(query_pcds, pred, 4)
-
-    for combo, roi_pcd in support_roi_pcds.items():
-        if roi_pcd.isempty(): continue
-        roi_pcd = roi_pcd.points_list()[0]
-        roi_labs = support_roi_labs[combo][0]
-        for i in tqdm(range(len(query_pcds)), leave=False):
-            # visualize(query_pcds[i], pred[i])
-            anneal = Anneal(roi_pcd, roi_labs, query_pcds[i], new_pred[i], query_closest_idx[i])
-            anneal.anneal()
-    # print(torch.equal(pred, new_pred))
-            # visualize(query_pcds[i], new_query_lab)
-    for i in range(len(new_pred)):
-        visualize(query_pcds[i], pred[i])
-        visualize(query_pcds[i], new_pred[i])
     
-    avg_iou, new_avg_iou = 0, 0
-    for p, gt in zip(pred, query_labs):
-        avg_iou += calc_iou(p, gt)
-    avg_iou /= len(pred)
-    print(avg_iou)
-    for p, gt in zip(new_pred, query_labs):
-        new_avg_iou += calc_iou(p, gt)
-    new_avg_iou /= len(new_pred)
-    print(new_avg_iou)
+    iou_by_cat = {k:[] for k in pcds_dict.keys()}
+    acc_by_cat = {k:[] for k in pcds_dict.keys()}
+    for category in tqdm(pcds_dict.keys(), desc="Total Progress"):
+        round_iou_before = 0
+        round_iou_after = 0
+        round_acc_before = 0
+        round_acc_after = 0
+        for _ in tqdm(range(n_rounds), leave=False, desc=f'Iterating through "{category}"'):
+            support_pcds, support_labs, query_pcds, query_labs = get_support_query(
+                pcds_dict[category], pcd_labs[category], n_sample)
+            support_pcds = torch.tensor(support_pcds).float().cuda()
+            support_labs = torch.tensor(support_labs).long().cuda()
+            query_pcds = torch.tensor(query_pcds).float().cuda()
+            query_labs = torch.tensor(query_labs).long().cuda()
+            pred = get_knn(support_pcds, support_labs, query_pcds, K=3)
+            new_pred = pred.clone()
+            # Get initial pred accurancy
+            support_closest_idx, support_roi_idxs, support_roi_pcds, support_roi_labs = get_roi_knn(support_pcds, support_labs, CAT_TO_NUM_PARTS[category])
+            query_closest_idx, query_roi_idxs, query_roi_pcds, query_roi_labs = get_roi_knn(query_pcds, pred, CAT_TO_NUM_PARTS[category])
+
+            for combo, roi_pcd in tqdm(support_roi_pcds.items(), leave=False, desc="Iterating through label combo"):
+                if roi_pcd.isempty(): continue
+                roi_pcd = roi_pcd.points_list()[0]
+                roi_labs = support_roi_labs[combo][0]
+                for i in tqdm(range(len(query_pcds)), leave=False, desc=f'Iterating combo {combo}'):
+                    # visualize(query_pcds[i], pred[i])
+                    anneal = Anneal(roi_pcd, roi_labs, query_pcds[i], new_pred[i], query_closest_idx[i])
+                    anneal.anneal()
+            
+            avg_iou, new_avg_iou = 0, 0
+            avg_acc, new_avg_acc = 0, 0
+            for p, gt in zip(pred, query_labs):
+                avg_iou += calc_iou(p, gt)
+                avg_acc += calc_accuracy(p, gt)
+            avg_iou /= len(pred)
+            avg_acc /= len(pred)
+            round_iou_before += avg_iou
+            round_acc_before += avg_acc
+            for p, gt in zip(new_pred, query_labs):
+                new_avg_iou += calc_iou(p, gt)
+                new_avg_acc += calc_accuracy(p, gt)
+            new_avg_iou /= len(new_pred)
+            new_avg_acc /= len(new_pred)
+            round_iou_after += new_avg_iou
+            round_acc_after += new_avg_acc
+        
+        round_iou_before /= n_rounds
+        round_iou_after /= n_rounds
+        round_acc_before /= n_rounds
+        round_acc_after /= n_rounds
+
+        iou_by_cat[category] = [round_iou_before, round_iou_after]
+        acc_by_cat[category] = [round_acc_before, round_acc_after]
+    
+    pickle.dump(iou_by_cat, open(f'{LOG_ROOT}{exp_file_name}_iou_{datetime.now()}.pkl', 'wb'))
+    pickle.dump(acc_by_cat, open(f'{LOG_ROOT}{exp_file_name}_acc_{datetime.now()}.pkl', 'wb'))
+
 
 if __name__ == '__main__':
-    data_root = './data/'
-    pcds_dict = read_pkl(os.path.join(data_root, 'points_by_cat.pkl'))
-    pcd_labs = read_pkl(os.path.join(data_root, 'point_labels_by_cat.pkl'))
+    
 
-    # new_labs, combo_to_roi_idxs, combo_to_roi_pcds = get_roi_knn(
-    #     pcds_dict['Guitar'], pcd_labs['Guitar'], 4)
-    # visualize(pcds_dict['Guitar'][0], new_labs[0])
-    # for _, roi_pcds in combo_to_roi_pcds.items():
-    #     for roi_pcd in roi_pcds:
-    #         if not roi_pcd.isempty():
-    #             for pcd in roi_pcd.points_list():
-    #                 print(pcd.shape)
-    # main()
-    cnt = 0
-    num = 0
-    for k, v in pcds_dict.items():
-        cnt += len(v)
-        num += 1
-    print(cnt / num)
+    main()
