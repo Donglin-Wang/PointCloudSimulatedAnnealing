@@ -8,7 +8,7 @@ from pytorch3d.loss import chamfer_distance
 
 
 class Anneal:
-    def __init__(self, support_roi, support_roi_labs, query_pcd, query_lab, query_neigh_idx, start_pnt_idx=None):
+    def __init__(self, support_roi, support_roi_labs, query_pcd, query_lab, query_neigh_idx, n_out, n_in):
         # Get the coordinate from file
         self.query_pcd = query_pcd
         self.query_lab = query_lab
@@ -20,7 +20,7 @@ class Anneal:
         self.support_roi = support_roi
 
         # Initialize
-        self.cur =  start_pnt_idx if start_pnt_idx else self.init_solu()
+        self.cur = self.init_solu()
         self.cur_fit = self.calc_fitness(self.cur)
         self.best = self.cur
         self.best_fit = self.cur_fit
@@ -29,8 +29,8 @@ class Anneal:
         self.init_temp = torch.tensor(math.sqrt(2048))
         self.cur_temp = torch.tensor(math.sqrt(2048))
         self.alpha = 0.9995
-        self.max_iter = 1000  # number of inner loop n_{in}
-        self.num_exp = 2  # number of outer loop n_{out} / random restarts
+        self.max_iter = n_in  # number of inner loop n_{in}
+        self.num_exp = n_out  # number of outer loop n_{out} / random restarts
         self.log = []
 
     def init_solu(self):

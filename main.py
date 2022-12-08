@@ -124,9 +124,12 @@ def calc_iou(pred, target):
 
 
 def main():
-    n_rounds = 2
-    n_sample = 2
-    exp_file_name = 'r2s2k32o2i1000'
+    n_rounds = 10
+    n_sample = 20
+    n_out = 10
+    n_in = 200
+    K = 64
+    exp_file_name = f'r{n_rounds}s{n_sample}k{K}o{n_out}i{n_in}'
     pcds_dict = read_pkl(os.path.join(DATA_ROOT, 'points_by_cat.pkl'))
     pcd_labs = read_pkl(os.path.join(DATA_ROOT, 'point_labels_by_cat.pkl'))
     
@@ -144,11 +147,11 @@ def main():
             support_labs = torch.tensor(support_labs).long().cuda()
             query_pcds = torch.tensor(query_pcds).float().cuda()
             query_labs = torch.tensor(query_labs).long().cuda()
-            pred = get_knn(support_pcds, support_labs, query_pcds, K=3)
+            pred = get_knn(support_pcds, support_labs, query_pcds, K=K)
             new_pred = pred.clone()
             # Get initial pred accurancy
-            support_closest_idx, support_roi_idxs, support_roi_pcds, support_roi_labs = get_roi_knn(support_pcds, support_labs, CAT_TO_NUM_PARTS[category])
-            query_closest_idx, query_roi_idxs, query_roi_pcds, query_roi_labs = get_roi_knn(query_pcds, pred, CAT_TO_NUM_PARTS[category])
+            support_closest_idx, support_roi_idxs, support_roi_pcds, support_roi_labs = get_roi_knn(support_pcds, support_labs, CAT_TO_NUM_PARTS[category], K=K)
+            query_closest_idx, query_roi_idxs, query_roi_pcds, query_roi_labs = get_roi_knn(query_pcds, pred, CAT_TO_NUM_PARTS[category], K=K)
 
             for combo, roi_pcd in tqdm(support_roi_pcds.items(), leave=False, desc="Iterating through label combo"):
                 if roi_pcd.isempty(): continue
@@ -156,7 +159,7 @@ def main():
                 roi_labs = support_roi_labs[combo][0]
                 for i in tqdm(range(len(query_pcds)), leave=False, desc=f'Iterating combo {combo}'):
                     # visualize(query_pcds[i], pred[i])
-                    anneal = Anneal(roi_pcd, roi_labs, query_pcds[i], new_pred[i], query_closest_idx[i])
+                    anneal = Anneal(roi_pcd, roi_labs, query_pcds[i], new_pred[i], query_closest_idx[i], n_out, n_in)
                     anneal.anneal()
             
             avg_iou, new_avg_iou = 0, 0
@@ -187,8 +190,22 @@ def main():
     pickle.dump(iou_by_cat, open(f'{LOG_ROOT}{exp_file_name}_iou_{datetime.now()}.pkl', 'wb'))
     pickle.dump(acc_by_cat, open(f'{LOG_ROOT}{exp_file_name}_acc_{datetime.now()}.pkl', 'wb'))
 
+def visualize_roi():
+    data_root = './data/'
+    category = 'Car'
+    pcds_dict = read_pkl(os.path.join(data_root, 'points_by_cat.pkl'))
+    pcd_labs = read_pkl(os.path.join(data_root, 'point_labels_by_cat.pkl'))
+    for category in CAT_TO_NUM_PARTS.keys():
+        pcds = pcds_dict[category]
+        labs = pcd_labs[category]
+        _, roi_idxs, _, _ = get_roi_knn(pcds, labs, CAT_TO_NUM_PARTS[category], K=16)
+        for _, idxs in roi_idxs.items():
+            if len(idxs) == 0: continue
+            for (i, j) in idxs:
+                labs[i][j] = 6
+        visualize(pcds[0], labs[0])
 
 if __name__ == '__main__':
-    
-
-    main()
+    # main()
+    visualize_roi()
+    pass
