@@ -14,8 +14,8 @@ from datetime import datetime
 DATA_ROOT = './data/'
 LOG_ROOT = './logs/'
 CATEGORIES = []
-COLORS = np.array([[235, 87, 87], [242, 153, 74], [242, 201, 76],
-                   [33, 150, 83], [47, 128, 237], [155, 81, 224], [0, 0, 0]])
+COLORS = np.array([[255, 0, 0], [255, 255, 0], [0, 255, 0], [0, 0, 255], 
+                    [0, 255, 255], [255, 0, 255], [0, 0, 0]])
 BATCH_SIZE = 64
 CAT_TO_NUM_PARTS = {'Motorbike': 6, 'Guitar': 3, 'Rocket': 3, 'Cap': 2, 'Bag': 2, 'Airplane': 4, 'Lamp': 4,
                     'Car': 4, 'Skateboard': 3, 'Table': 3, 'Mug': 2, 'Knife': 2, 'Chair': 4, 'Laptop': 2, 'Pistol': 3, 'Earphone': 3}
@@ -36,7 +36,7 @@ def read_pkl(path):
     return pickle.load(open(path, 'rb'))
 
 
-def get_knn(labeled_pcds, labels, unlabeled_pcds, K=1):
+def get_knn(labeled_pcds, labels, unlabeled_pcds, K):
     n_unlabeled = unlabeled_pcds.shape[0]
     labeled_pcds, labels, unlabeled_pcds = numpy_to_tensor(
         labeled_pcds, labels, unlabeled_pcds)
@@ -56,13 +56,26 @@ def visualize(pcd, labels):
     pcd = trimesh.points.PointCloud(pcd, colors=COLORS[labels])
     pcd.scene().show()
 
+def visualize_save(pcd, labels, path):
+    if isinstance(pcd, torch.Tensor):
+        pcd = pcd.detach().cpu().numpy()
+    if isinstance(labels, torch.Tensor):
+        labels = labels.detach().cpu().numpy()
+    pcd = trimesh.points.PointCloud(pcd, colors=COLORS[labels])
+    scene = pcd.scene()
+    scene.show()
+    img = scene.save_image()
+    with open(path, 'wb') as f:
+        f.write(img)
+
 
 def get_support_query(pcds, pcd_labs, n_q):
     idx = np.random.choice(np.arange(len(pcds)), size=n_q + 1, replace=False)
+    print(idx)
     return pcds[[idx[0]]], pcd_labs[[idx[0]]], pcds[idx[1:]], pcd_labs[idx[1:]]
 
 
-def get_roi_knn(pcds, pcd_labs, n_parts, K=32):
+def get_roi_knn(pcds, pcd_labs, n_parts, K):
 
     pcds, pcd_labs = numpy_to_tensor(pcds, pcd_labs)
     pcd_labs = pcd_labs.long().unsqueeze(-1)
@@ -124,18 +137,24 @@ def calc_iou(pred, target):
 
 
 def main():
-    n_rounds = 10
-    n_sample = 20
-    n_out = 10
-    n_in = 200
-    K = 64
+    n_rounds = 1
+    n_sample = 1
+    n_out = 4
+    n_in = 500
+    K = 32
+    seed = 42
+    
+    np.random.seed(seed)
     exp_file_name = f'r{n_rounds}s{n_sample}k{K}o{n_out}i{n_in}'
     pcds_dict = read_pkl(os.path.join(DATA_ROOT, 'points_by_cat.pkl'))
     pcd_labs = read_pkl(os.path.join(DATA_ROOT, 'point_labels_by_cat.pkl'))
     
     iou_by_cat = {k:[] for k in pcds_dict.keys()}
     acc_by_cat = {k:[] for k in pcds_dict.keys()}
-    for category in tqdm(pcds_dict.keys(), desc="Total Progress"):
+    img_dir = f'./images/{datetime.now()}'
+    os.mkdir(img_dir)
+
+    for category in tqdm(['Airplane'], desc="Total Progress"):
         round_iou_before = 0
         round_iou_after = 0
         round_acc_before = 0
@@ -150,8 +169,8 @@ def main():
             pred = get_knn(support_pcds, support_labs, query_pcds, K=K)
             new_pred = pred.clone()
             # Get initial pred accurancy
-            support_closest_idx, support_roi_idxs, support_roi_pcds, support_roi_labs = get_roi_knn(support_pcds, support_labs, CAT_TO_NUM_PARTS[category], K=K)
-            query_closest_idx, query_roi_idxs, query_roi_pcds, query_roi_labs = get_roi_knn(query_pcds, pred, CAT_TO_NUM_PARTS[category], K=K)
+            support_closest_idx, support_roi_idxs, support_roi_pcds, support_roi_labs = get_roi_knn(support_pcds, support_labs, CAT_TO_NUM_PARTS[category], K)
+            query_closest_idx, query_roi_idxs, query_roi_pcds, query_roi_labs = get_roi_knn(query_pcds, pred, CAT_TO_NUM_PARTS[category], K)
 
             for combo, roi_pcd in tqdm(support_roi_pcds.items(), leave=False, desc="Iterating through label combo"):
                 if roi_pcd.isempty(): continue
@@ -162,6 +181,11 @@ def main():
                     anneal = Anneal(roi_pcd, roi_labs, query_pcds[i], new_pred[i], query_closest_idx[i], n_out, n_in)
                     anneal.anneal()
             
+            visualize_save(support_pcds[0], support_labs[0], f'{img_dir}/{category}_k{K}o{n_out}i{n_in}_support.png')
+            visualize_save(query_pcds[0], query_labs[0], f'{img_dir}/{category}_k{K}o{n_out}i{n_in}_gt.png')
+            visualize_save(query_pcds[0], pred[0], f'{img_dir}/{category}_k{K}o{n_out}i{n_in}_knn.png')
+            visualize_save(query_pcds[0], new_pred[0], f'{img_dir}/{category}_k{K}o{n_out}i{n_in}_sa.png')
+
             avg_iou, new_avg_iou = 0, 0
             avg_acc, new_avg_acc = 0, 0
             for p, gt in zip(pred, query_labs):
@@ -187,23 +211,24 @@ def main():
         iou_by_cat[category] = [round_iou_before, round_iou_after]
         acc_by_cat[category] = [round_acc_before, round_acc_after]
     
-    pickle.dump(iou_by_cat, open(f'{LOG_ROOT}{exp_file_name}_iou_{datetime.now()}.pkl', 'wb'))
-    pickle.dump(acc_by_cat, open(f'{LOG_ROOT}{exp_file_name}_acc_{datetime.now()}.pkl', 'wb'))
+    # pickle.dump(iou_by_cat, open(f'{LOG_ROOT}{exp_file_name}_iou_{datetime.now()}.pkl', 'wb'))
+    # pickle.dump(acc_by_cat, open(f'{LOG_ROOT}{exp_file_name}_acc_{datetime.now()}.pkl', 'wb'))
 
 def visualize_roi():
     data_root = './data/'
-    category = 'Car'
     pcds_dict = read_pkl(os.path.join(data_root, 'points_by_cat.pkl'))
     pcd_labs = read_pkl(os.path.join(data_root, 'point_labels_by_cat.pkl'))
-    for category in CAT_TO_NUM_PARTS.keys():
-        pcds = pcds_dict[category]
-        labs = pcd_labs[category]
-        _, roi_idxs, _, _ = get_roi_knn(pcds, labs, CAT_TO_NUM_PARTS[category], K=16)
-        for _, idxs in roi_idxs.items():
-            if len(idxs) == 0: continue
-            for (i, j) in idxs:
-                labs[i][j] = 6
-        visualize(pcds[0], labs[0])
+    ks = [8, 16, 32, 64]
+    for K in ks:
+        for category in ['Airplane']:
+            pcds = torch.tensor(pcds_dict[category][[1340]]).float().cuda()
+            labs = torch.tensor(pcd_labs[category][[1340]]).long().cuda()
+            _, roi_idxs, _, _ = get_roi_knn(pcds, labs, CAT_TO_NUM_PARTS[category], K=K)
+            for _, idxs in roi_idxs.items():
+                if len(idxs) == 0: continue
+                for (i, j) in idxs:
+                    labs[i][j] = 6
+            visualize(pcds[0], labs[0])
 
 if __name__ == '__main__':
     # main()
