@@ -23,4 +23,4 @@ https://github.com/Donglin-Wang2/shapenet-partnet-utils
 
 The rest of the preprocessing is done by the `preprocessing.py` script in this repository.
 
-If you wish to download the processed data, please [click here](https://drive.google.com/file/d/1wrsP83sUb1vE-38Mr29f4dBIhehO1S8_/view?usp=sharing)
+If you wish to download the processed data, please [click here](https://drive.google.com/file/d/1wrsP83sUb1vE-38Mr29f4dBIhehO1S8_/view?usp=sharing). After downloading, please unzip the content to the `./data` folder.
