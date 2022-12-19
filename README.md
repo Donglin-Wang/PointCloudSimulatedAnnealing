@@ -1,6 +1,6 @@
 # Point Cloud Local Region of Interest Matching with Simulated Annealing
 
-Put a brief description here.
+This code base aims to improve the KNN point cloud labeling by matching regional features using Simulated Annealing.
 
 ## Installation
 
@@ -14,3 +14,13 @@ docker build -t <tag_name> .
 ```
 docker run -i -t <tag_name> /bin/bash
 ```
+
+## Data
+
+This project uses the [ShapeNet Part dataset](https://cs.stanford.edu/~ericyi/project_page/part_annotation/). Part of the data processing uses the script found in this repository:
+
+https://github.com/Donglin-Wang2/shapenet-partnet-utils
+
+The rest of the preprocessing is done by the `preprocessing.py` script in this repository.
+
+If you wish to download the processed data, please [click here](https://drive.google.com/file/d/1wrsP83sUb1vE-38Mr29f4dBIhehO1S8_/view?usp=sharing)
