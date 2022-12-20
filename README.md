@@ -12,7 +12,7 @@ The rest of the preprocessing is done by the `preprocessing.py` script in this r
 
 If you wish to download the processed data, please [click here](https://drive.google.com/file/d/1wrsP83sUb1vE-38Mr29f4dBIhehO1S8_/view?usp=sharing). After downloading, please unzip the content to the `./data` folder.
 
-## Installation
+## Dependencies
 
 If you wish the install all dependencies in your local environment using conda, please type the commands in `Dockerfile` without the `RUN` and `FROM` keywords. Otherwise, the following is an instruction on creating a Docker container for dependencies. Note that this has not been tested. In addition, you will have to move the content of this repository into the container after the image has been built.
 
