@@ -1,4 +1,4 @@
-# Point Cloud Local Region of Interest Matching with Simulated Annealing
+# Point Cloud Regional Matching with Simulated Annealing
 
 This code base aims to improve the KNN point cloud labeling by matching regional features using Simulated Annealing.
 
